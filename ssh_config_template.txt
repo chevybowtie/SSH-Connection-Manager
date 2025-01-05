@@ -1,0 +1,3 @@
+# Example SSH configuration
+server name1=user@hostname1
+server name2=user@ip-address
