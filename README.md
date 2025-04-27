@@ -32,15 +32,17 @@ The SSH Connection Manager is a simple and efficient shell script to manage and 
 
 
 ### TODO
-* Add stanzas to the config file so you may logically group connections (home, work, projects, etc.)
 * Multiple Config Files: Allow the script to manage multiple configuration files, enabling users to switch between different sets of server connections (e.g., `ssh_config_home.txt`, `ssh_config_work.txt`).
 * Search and Filter: Implement a search and filter functionality within the menu to quickly find specific servers based on keywords or tags.
 * Edit Existing Connections: Provide an option to edit existing server connections in the configuration file directly from the script.
 * Backup and Restore: Add a feature to create backups of the configuration file and restore from backups in case of accidental deletions or file corruption.
 * Connection Health Check: Include a health check feature that periodically pings or tests connections to ensure servers are reachable.
-* User-Friendly Interface: Enhance the script's interface with colored output and more user-friendly prompts to improve the user experience.
 * Add more robust error checking
-
+* Read the config file once and store it in an associative array or indexed array for faster lookups and reduced parsing.
+* Provide a numbered menu as a fallback for systems where arrow keys don’t work.
+* The script uses GNU-specific utilities (sed -i, awk syntax). This could lead to compatibility issues on systems like macOS that use BSD versions of these tools.
+* There’s no validation for the format of connection details
+  
 
 ### Contributions
 

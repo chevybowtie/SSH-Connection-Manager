@@ -17,6 +17,18 @@ HISTORY_FILE="$HOME/.bash_history"
 SSH_TIMEOUT=5  # Timeout for SSH connections in seconds
 VERSION=0.0.2  # Script version
 LOG_FILE="$CONFIG_DIR/ssh_manager.log"
+CONFIG_DIR="$HOME/.ssh_connection_manager"
+CONFIG_FILE="$CONFIG_DIR/ssh_config.txt"
+SSH_TIMEOUT=5  # Set timeout to 5 seconds
+VERSION=0.0.4
+
+# ANSI color codes
+RED='\033[31m'
+GREEN='\033[32m'
+BLUE='\033[34m'
+CYAN='\033[36m'
+YELLOW='\033[33m'
+RESET='\033[0m'
 
 # Add logging for errors and actions
 function log {
@@ -67,162 +79,332 @@ function validate_input {
 
 # Function to display the main menu and handle user input
 function display_menu {
-    echo "Select a server to connect to:"
-    servers=()  # Indexed array to store server details
-    index=1  # Index for menu options
+    declare -A categories
+    declare -A entries
+    index=1
 
-    # Read saved connections from the configuration file
+    echo -e "${CYAN}========================================${RESET}"
+    echo -e "${CYAN}       SSH Connection Manager v$VERSION       ${RESET}"
+    echo -e "${CYAN}========================================${RESET}"
+
+    # Parse the configuration file
     while IFS= read -r line; do
-        if [[ "$line" =~ ^([^=]+)=(.*)$ ]]; then
-            server_name="${BASH_REMATCH[1]}"  # Extract server name
-            connection_details="${BASH_REMATCH[2]}"  # Extract connection details
-            servers+=("$server_name=$connection_details")  # Store key-value pair
-            echo "$index) $server_name"  # Display server name with index
+        category=$(echo "$line" | grep -oP "^\(\K[^)]+(?=\))")
+        entry_name=$(echo "$line" | awk -F'[)=]' '{print $2}' | xargs)
+        connection_details=$(echo "$line" | awk -F'=' '{print $2}')
+        
+        if [[ -n "$category" && -n "$entry_name" && -n "$connection_details" ]]; then
+            categories["$category"]=1
+            entries["$category,$entry_name"]="$connection_details"
+        fi
+    done < "$CONFIG_FILE"
+
+    # Dynamic menu navigation
+    local options=("${!categories[@]}" "Utility menu" "Cancel and exit")
+    local current_index=0
+
+    while true; do
+        clear
+        echo -e "${CYAN}========================================${RESET}"
+        echo -e "${CYAN}       SSH Connection Manager v$VERSION       ${RESET}"
+        echo -e "${CYAN}========================================${RESET}"
+        echo -e "${YELLOW}Use arrow keys to navigate, Enter to select:${RESET}"
+
+        # Display the menu options with highlights
+        for i in "${!options[@]}"; do
+            if [[ "$i" == "$current_index" ]]; then
+                echo -e "${GREEN} > ${options[$i]}${RESET}"
+            else
+                echo "   ${options[$i]}"
+            fi
+        done
+
+        # Read user input
+        read -s -n 1 key
+        case "$key" in
+        $'\x1b')  # Handle arrow keys
+            read -s -n 2 key
+            case "$key" in
+            "[A")  # Up arrow
+                ((current_index--))
+                if [[ "$current_index" -lt 0 ]]; then
+                    current_index=$((${#options[@]} - 1))
+                fi
+                ;;
+            "[B")  # Down arrow
+                ((current_index++))
+                if [[ "$current_index" -ge "${#options[@]}" ]]; then
+                    current_index=0
+                fi
+                ;;
+            esac
+            ;;
+        "")  # Enter key
+            if [[ "$current_index" -lt $((${#options[@]} - 2)) ]]; then
+                display_entries "${options[$current_index]}"
+            elif [[ "${options[$current_index]}" == "Utility menu" ]]; then
+                utility_menu
+            elif [[ "${options[$current_index]}" == "Cancel and exit" ]]; then
+                echo -e "${RED}Exiting. Goodbye!${RESET}"
+                exit 0
+            fi
+            ;;
+        esac
+    done
+}
+
+
+function utility_menu {
+    local options=("Add a new server" "Delete a server" "Back to main menu")
+    local current_index=0
+
+    while true; do
+        clear
+        echo -e "${CYAN}========================================${RESET}"
+        echo -e "${BLUE}          Utility Menu                  ${RESET}"
+        echo -e "${CYAN}========================================${RESET}"
+        echo -e "${YELLOW}Use arrow keys to navigate, Enter to select:${RESET}"
+
+        # Display the menu options with highlights
+        for i in "${!options[@]}"; do
+            if [[ "$i" == "$current_index" ]]; then
+                echo -e "${GREEN} > ${options[$i]}${RESET}"
+            else
+                echo "   ${options[$i]}"
+            fi
+        done
+
+        # Read user input
+        read -s -n 1 key
+        case "$key" in
+        $'\x1b')  # Handle arrow keys
+            read -s -n 2 key
+            case "$key" in
+            "[A")  # Up arrow
+                ((current_index--))
+                if [[ "$current_index" -lt 0 ]]; then
+                    current_index=$((${#options[@]} - 1))
+                fi
+                ;;
+            "[B")  # Down arrow
+                ((current_index++))
+                if [[ "$current_index" -ge "${#options[@]}" ]]; then
+                    current_index=0
+                fi
+                ;;
+            esac
+            ;;
+        "")  # Enter key
+            if [[ "${options[$current_index]}" == "Add a new server" ]]; then
+                add_server
+            elif [[ "${options[$current_index]}" == "Delete a server" ]]; then
+                delete_server
+            elif [[ "${options[$current_index]}" == "Back to main menu" ]]; then
+                display_menu
+            fi
+            ;;
+        esac
+    done
+}
+
+
+function add_server {
+    echo -e "${CYAN}Enter the category for this server (e.g., 'lan' or 'Azure'): ${RESET}"
+    read new_category
+    echo -e "${CYAN}Enter a name for this server (e.g., 'MyServer'): ${RESET}"
+    read new_server_name
+    echo -e "${CYAN}Enter the connection details (e.g., user@hostname): ${RESET}"
+    read new_connection_details
+
+    if [[ -z "$new_category" || -z "$new_server_name" || -z "$new_connection_details" ]]; then
+        echo -e "${RED}Invalid input. All fields are required!${RESET}"
+        return
+    fi
+
+    # Add the new server to the config file
+    echo "(${new_category}) $new_server_name=$new_connection_details" >> "$CONFIG_FILE"
+    echo -e "${GREEN}Server added successfully!${RESET}"
+}
+
+
+function delete_server {
+    declare -A entries
+    index=1
+
+    echo -e "${CYAN}========================================${RESET}"
+    echo -e "${BLUE}         Delete a Server                ${RESET}"
+    echo -e "${CYAN}========================================${RESET}"
+
+    # Parse the configuration file
+    while IFS= read -r line; do
+        category=$(echo "$line" | grep -o "^\([^)]*\)" | tr -d '()')
+        entry_name=$(echo "$line" | awk -F'[)=]' '{print $2}' | xargs)
+        connection_details=$(echo "$line" | awk -F'=' '{print $2}')
+
+        if [[ -n "$category" && -n "$entry_name" && -n "$connection_details" ]]; then
+            entries["$index"]="$line"
+            echo -e "${CYAN}$index) (${category}) $entry_name${RESET}"
             index=$((index + 1))
         fi
     done < "$CONFIG_FILE"
 
-    # Display additional menu options
-    echo "A) Add a new server"
-    echo "B) Scan bash history for SSH connections"
-    echo "Q) Quit"
-    read -p "Enter your choice: " choice
+    echo -e "${YELLOW}Enter the number of the server to delete (or B to go back): ${RESET}"
+    read delete_choice
 
-    # Handle user choice
-    if [[ "$choice" == "A" || "$choice" == "a" ]]; then
-        connect_new_server  # Add a new server
-    elif [[ "$choice" == "B" || "$choice" == "b" ]]; then
-        scan_bash_history  # Scan bash history for SSH connections
-    elif [[ "$choice" == "Q" || "$choice" == "q" ]]; then
-        echo "Exiting..."
-        exit 0
-    elif [[ "$choice" =~ ^[0-9]+$ && "$choice" -le "${#servers[@]}" ]]; then
-        connection_details="${servers[$((choice - 1))]#*=}"  # Extract connection details
-        ssh -o ConnectTimeout=$SSH_TIMEOUT "$connection_details"  # Connect to the selected server
+    if [[ "$delete_choice" == "B" || "$delete_choice" == "b" ]]; then
+        utility_menu
+    elif [[ -n "${entries[$delete_choice]}" ]]; then
+        # Use the exact line content to delete the entry
+        line_to_delete="${entries[$delete_choice]}"
+        # Portable sed command for in-place editing
+        sed "/$(echo "$line_to_delete" | sed 's/[\/&]/\\&/g')/d" "$CONFIG_FILE" > "$CONFIG_FILE.tmp" && mv "$CONFIG_FILE.tmp" "$CONFIG_FILE"
+        echo -e "${GREEN}Server deleted successfully!${RESET}"
     else
-        echo "Invalid choice!"
+        echo -e "${RED}Invalid choice!${RESET}"
     fi
 }
 
-# Function to add and save a new SSH connection
-function connect_new_server {
-    echo "Enter the connection details (e.g., user@hostname): "
-    read new_server
-    validate_input "$new_server" || return  # Validate input
 
-    ssh -o ConnectTimeout=$SSH_TIMEOUT $new_server  # Attempt to connect
+function display_entries {
+    local selected_category="$1"
+    local entry_keys=( )
+    local entry_index=0
 
-    if [ $? -eq 0 ]; then  # Check if the connection was successful
-        echo "Connection successful! Would you like to save this connection? (y/n)"
-        read save_choice
-        if [ "$save_choice" == "y" ]; then
-            echo "Enter a name for this connection: "
-            read new_server_name
-            validate_input "$new_server_name" || return  # Validate input
-
-            # Check if the server name already exists in the configuration file
-            if grep -q "^$new_server_name=" "$CONFIG_FILE"; then
-                echo "A connection with this name already exists. Please choose a different name."
-                return
-            fi
-
-            # Save the new connection to the configuration file
-            echo "$new_server_name=$new_server" >> "$CONFIG_FILE" || { log "Failed to save connection."; echo "Failed to save connection."; return; }
-            echo "Connection saved."
-            log "Connection '$new_server_name' saved successfully."
-        else
-            echo "Connection not saved."
-        fi
-    else
-        echo "Connection failed."
-        log "Connection attempt to '$new_server' failed."
-    fi
-}
-
-# Function to scan bash history for SSH commands and offer to save them
-function scan_bash_history {
-    # Dynamically determine the history file location
-    if [ -z "$HISTFILE" ]; then
-        if [ -f "$HOME/.bash_history" ]; then
-            HISTORY_FILE="$HOME/.bash_history"
-            log "Using default bash history file at $HISTORY_FILE."
-        elif [ -f "$HOME/.zsh_history" ]; then
-            HISTORY_FILE="$HOME/.zsh_history"
-            log "Using default zsh history file at $HISTORY_FILE."
-        else
-            echo "No history file found (bash or zsh)."
-            log "No history file found (bash or zsh)."
-            return
-        fi
-    else
-        HISTORY_FILE="$HISTFILE"
-        log "Using history file from HISTFILE environment variable: $HISTORY_FILE."
-    fi
-
-    # Extract unique SSH commands from the history file
-    unique_connections=$(grep -E "^ssh [^ ]+@[^ ]+" "$HISTORY_FILE" | awk '{print $2}' | sort -u)
-
-    # Read existing connections from the configuration file into an indexed array
-    existing_connections=()
-    while IFS= read -r line; do
-        if [[ "$line" =~ ^([^=]+)=(.*)$ ]]; then
-            connection_details="${BASH_REMATCH[2]}"
-            existing_connections+=("$connection_details")
-        fi
-    done < "$CONFIG_FILE"
-
-    echo "Scanning history file for SSH connections..."
-    log "Scanning history file for SSH connections."
-    for connection in $unique_connections; do
-        echo "Found connection: $connection"
-        # Skip if the connection is already saved
-        if [[ " ${existing_connections[*]} " == *" $connection "* ]]; then
-            echo "Skipping already existing connection: $connection"
-            continue
-        fi
-
-        # Attempt to connect to the found connection
-        echo "Attempting to connect to $connection..."
-        ssh -o ConnectTimeout=$SSH_TIMEOUT $connection
-
-        if [ $? -eq 0 ]; then  # Check if the connection was successful
-            echo "Connection to $connection successful! Would you like to save this connection? (y/n)"
-            read -r save_choice
-            if [ "$save_choice" == "y" ]; then
-                echo "Enter a name for this connection: "
-                read -r new_server_name
-                validate_input "$new_server_name" || continue  # Validate input
-                echo "$new_server_name=$connection" >> "$CONFIG_FILE" || { log "Failed to save connection '$connection'."; echo "Failed to save connection."; continue; }
-                echo "Connection saved."
-                log "Connection '$new_server_name' saved successfully."
-            else
-                echo "Connection not saved."
-            fi
-        else
-            echo "Connection to $connection failed."
-            log "Connection attempt to '$connection' failed."
+    # Collect entries for the selected category
+    for key in "${!entries[@]}"; do
+        IFS=',' read -r category entry_name <<< "$key"
+        if [[ "$category" == "$selected_category" ]]; then
+            entry_keys+=("$key")
         fi
     done
 
-    echo "Finished scanning and processing history file."
-    log "Finished scanning and processing history file."
+    while true; do
+        clear
+        echo -e "${CYAN}========================================${RESET}"
+        echo -e "${BLUE}  Entries in category: ${selected_category}${RESET}"
+        echo -e "${CYAN}========================================${RESET}"
+        echo -e "${YELLOW}Use arrow keys to navigate, Enter to select, or B to go back:${RESET}"
+
+        for i in "${!entry_keys[@]}"; do
+            if [[ "$i" == "$entry_index" ]]; then
+                IFS=',' read -r _ entry_name <<< "${entry_keys[$i]}"
+                echo -e "${GREEN} > $entry_name${RESET}"
+            else
+                IFS=',' read -r _ entry_name <<< "${entry_keys[$i]}"
+                echo "   $entry_name"
+            fi
+        done
+
+        # Read user input
+        read -s -n 1 key
+        case "$key" in
+        $'\x1b')  # Handle arrow keys
+            read -s -n 2 key
+            case "$key" in
+            "[A")  # Up arrow
+                ((entry_index--))
+                if [[ "$entry_index" -lt 0 ]]; then
+                    entry_index=$((${#entry_keys[@]} - 1))
+                fi
+                ;;
+            "[B")  # Down arrow
+                ((entry_index++))
+                if [[ "$entry_index" -ge "${#entry_keys[@]}" ]]; then
+                    entry_index=0
+                fi
+                ;;
+            esac
+            ;;
+        "")  # Enter key
+            if [[ -n "${entry_keys[$entry_index]}" ]]; then
+                ssh -o ConnectTimeout=$SSH_TIMEOUT "${entries[${entry_keys[$entry_index]}]}"
+                return
+            fi
+            ;;
+        "B"|"b")  # Back to categories
+            return
+            ;;
+        esac
+    done
 }
 
-# Ensure the configuration file exists, creating it if necessary
+
+function navigate_menu {
+    local options=("$@")  # Capture all arguments as an array
+    local prompt="${options[0]}"  # First argument is the prompt
+    unset options[0]  # Remove the prompt from the options array
+    options=("${options[@]}")  # Re-index the array
+    local current_index=0
+
+    while true; do
+        clear
+        echo -e "${CYAN}========================================${RESET}"
+        echo -e "${BLUE}$prompt${RESET}"
+        echo -e "${CYAN}========================================${RESET}"
+        echo -e "${YELLOW}Use arrow keys to navigate, Enter to select:${RESET}"
+
+        for i in "${!options[@]}"; do
+            if [[ "$i" == "$current_index" ]]; then
+                echo -e "${GREEN} > ${options[$i]}${RESET}"
+            else
+                echo "   ${options[$i]}"
+            fi
+        done
+
+        # Read user input
+        read -s -n 1 key
+        case "$key" in
+        $'\x1b')  # Handle arrow keys
+            read -s -n 2 key
+            case "$key" in
+            "[A")  # Up arrow
+                ((current_index--))
+                if [[ "$current_index" -lt 0 ]]; then
+                    current_index=$((${#options[@]} - 1))
+                fi
+                ;;
+            "[B")  # Down arrow
+                ((current_index++))
+                if [[ "$current_index" -ge "${#options[@]}" ]]; then
+                    current_index=0
+                fi
+                ;;
+            esac
+            ;;
+        "")  # Enter key
+            return "$current_index"
+            ;;
+        esac
+    done
+}
+
+
+function check_required_tools {
+    local missing_tools=()
+    for tool in grep awk sed ssh; do
+        if ! command -v "$tool" &> /dev/null; then
+            missing_tools+=("$tool")
+        fi
+    done
+
+    if [[ ${#missing_tools[@]} -gt 0 ]]; then
+        echo -e "${RED}Error: The following required tools are missing:${RESET}"
+        for tool in "${missing_tools[@]}"; do
+            echo -e "${RED} - $tool${RESET}"
+        done
+        echo -e "${YELLOW}Please install the missing tools and try again.${RESET}"
+        exit 1
+    fi
+}
+
+
 if [ ! -f "$CONFIG_FILE" ]; then
-    mkdir -p "$CONFIG_DIR" || { log "Failed to create config directory!"; echo "Failed to create config directory!"; exit 1; }
-    touch "$CONFIG_FILE" || { log "Failed to create config file!"; echo "Failed to create config file!"; exit 1; }
-    chmod 600 "$CONFIG_FILE"  # Restrict access to the config file
-    echo "Config file not found! A new one has been created at $CONFIG_FILE. Please add your server details."
-    log "Created new config file at $CONFIG_FILE."
+    mkdir -p "$CONFIG_DIR"
+    touch "$CONFIG_FILE"
+    echo -e "${GREEN}Config file not found! A new one has been created at $CONFIG_FILE.${RESET}"
     exit 1
 fi
 
-chmod 600 "$CONFIG_FILE"  # Restrict access to the config file
+check_required_tools
 
-# Use `mktemp` for temporary files if needed 
-TEMP_FILE=$(mktemp) || { log "Failed to create temporary file."; echo "Failed to create temporary file."; exit 1; }
-trap "rm -f $TEMP_FILE" EXIT  # Ensure temporary file is cleaned up
-
-# Display the main menu
 display_menu
