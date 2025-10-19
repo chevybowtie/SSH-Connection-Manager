@@ -1,0 +1,28 @@
+name: CI
+
+on:
+  push:
+    branches: ["main", "master", "feature/json-config"]
+  pull_request:
+    branches: ["main", "master"]
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y shellcheck jq
+
+      - name: Run shellcheck
+        run: shellcheck -x connect.sh
+
+      - name: Bash syntax check
+        run: bash -n connect.sh
+
+      - name: Validate sample config JSON
+        run: jq empty sample.config.json

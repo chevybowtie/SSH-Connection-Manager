@@ -1,0 +1,4 @@
+target/
+.ssh_connection_manager_backup/
+*.log
+*.tmp
