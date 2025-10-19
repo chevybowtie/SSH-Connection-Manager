@@ -1,0 +1,15 @@
+{
+    "LAN": {
+        "aprs-iGate": "user@example.lan",
+        "aprs-iGate-by-ip": "user@10.0.0.1",
+        "pfSense-for-home": "admin@pfsense.lan",
+        "NFS-server": "user@nfs.lan",
+        "NFS-by-IP": "user@10.0.0.2"
+    },
+    "AWS": {
+        "Squid-Proxy": "root@203.0.113.1"
+    },
+    "Azure": {
+        "homer-dashboard": "azureuser@example.net"
+    }
+}
